@@ -5,6 +5,8 @@
   # ♟️ IkoChess
 
   **The ultimate real-time multiplayer Chess WebApp seamlessly integrated with Telegram Groups.**
+
+  [**English**](README.md) | [Français](README.fr.md)
 </div>
 
 <br />
