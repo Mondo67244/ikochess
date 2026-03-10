@@ -8,7 +8,7 @@ import { GameOverModal } from './components/GameOverModal';
 import { Leaderboard } from './components/Leaderboard';
 import { ChessBoardComponent } from './components/ChessBoardComponent';
 import { ChatAndSpectator } from './components/ChatAndSpectator';
-import { ChessHUD } from './components/ChessHUD';
+import { PlayerBadge } from './components/PlayerBadge';
 
 const API_URL = import.meta.env.VITE_SERVER_URL || '';
 
@@ -315,21 +315,19 @@ function App() {
         handleEmojiSend={handleEmojiSend}
       />
 
-      <ChessHUD 
-        opponentInfo={opponentInfo}
-        oppColor={oppColor}
-        myInfo={myInfo}
-        mySide={mySide}
-        game={game}
-        timers={timers}
-        status={status}
-        isSpectator={isSpectator}
-        activeEmojis={activeEmojis}
-        showEmojiPicker={showEmojiPicker}
-        setShowEmojiPicker={setShowEmojiPicker}
-        isReady={isReady}
+      {/* Opponent badge - above the board */}
+      <PlayerBadge 
+        name={opponentInfo?.name} 
+        color={oppColor}
+        isActive={game.turn() === oppColor.charAt(0)}
+        timer={timers[oppColor]}
+        isMe={false}
+        gameStatus={status}
+        fen={game.fen()}
+        selectedEmoji={activeEmojis[oppColor]}
       />
 
+      {/* Chess board - fills remaining space */}
       <div className="board-wrapper">
         <ChessBoardComponent 
           game={game}
@@ -350,6 +348,21 @@ function App() {
         {!isReady && status === 'your-turn' && <div className="status-text">Veuillez indiquer que vous êtes prêt.</div>}
         {isReady && status === 'your-turn' && <div className="status-text" style={{color: '#43a047'}}>C'est à vous de jouer !</div>}
       </div>
+
+      {/* My badge - below the board */}
+      <PlayerBadge 
+        name={myInfo?.name} 
+        color={mySide}
+        isActive={game.turn() === mySide.charAt(0)}
+        timer={timers[mySide]}
+        isMe={true}
+        isSpectator={isSpectator}
+        gameStatus={status}
+        onEmojiTrigger={() => setShowEmojiPicker(!showEmojiPicker)}
+        showEmojiPicker={showEmojiPicker}
+        fen={game.fen()}
+        selectedEmoji={activeEmojis[mySide]}
+      />
 
       <Leaderboard isOpen={showLeaderboard} onClose={() => setShowLeaderboard(false)} />
 
