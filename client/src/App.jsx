@@ -53,11 +53,16 @@ function App() {
     const playerJson = params.get('player');
 
     let playerData = null;
-    try {
-      if (playerJson) playerData = JSON.parse(decodeURIComponent(playerJson));
-    } catch(e) { 
-      // Sometimes player is just an ID, let's wrap it
-      if (playerJson) playerData = { id: playerJson };
+    if (typeof window !== 'undefined' && window.Telegram?.WebApp?.initDataUnsafe?.user) {
+      playerData = window.Telegram.WebApp.initDataUnsafe.user;
+    }
+
+    if (!playerData && playerJson) {
+      try {
+        playerData = JSON.parse(decodeURIComponent(playerJson));
+      } catch(e) { 
+        playerData = { id: playerJson };
+      }
     }
 
     if (!gid) {
@@ -272,10 +277,10 @@ function App() {
 
   const getOpponentColor = () => myColor === 'white' ? 'black' : 'white';
 
-  const opponentInfo = myColor ? players[getOpponentColor()] : players.white;
-  const myInfo = myColor ? players[myColor] : players.black;
-  const oppColor = myColor ? getOpponentColor() : 'white';
-  const mySide = myColor || 'black';
+  const opponentInfo = myColor ? players[getOpponentColor()] : players.black;
+  const myInfo = myColor ? players[myColor] : players.white;
+  const oppColor = myColor ? getOpponentColor() : 'black';
+  const mySide = myColor || 'white';
 
   // ─── LANDING PAGE (no game params) ───
   if (!hasGameId) {

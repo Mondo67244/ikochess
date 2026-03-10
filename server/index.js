@@ -37,7 +37,15 @@ setupRoutes(app, games, players)
 
 // ── Static files & fallback ──
 const clientDist = path.join(__dirname, '..', 'client', 'dist')
-app.use(express.static(clientDist))
+app.use(express.static(clientDist, {
+  setHeaders: (res, path) => {
+    if (path.endsWith('.html')) {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+    }
+  }
+}))
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', games: games.size, players: players.size, spectators: spectators.size })
