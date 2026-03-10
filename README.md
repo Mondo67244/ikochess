@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="https://raw.githubusercontent.com/telegram-bot-api/telegram-bot-api/master/docs/telegram-logo.png" width="80" alt="Telegram Logo" />
+  <img src="https://upload.wikimedia.org/wikipedia/commons/8/82/Telegram_logo.svg" width="80" alt="Telegram Logo" />
   <img src="https://cdn-icons-png.flaticon.com/512/811/811462.png" width="80" alt="Chess Logo" />
 
   # ♟️ IkoChess
@@ -49,14 +49,17 @@ IkoChess is built on a robust, modern JavaScript stack designed for extremely fa
 To spin up a local development instance of IkoChess, ensure you have **Node.js 20+** and **Docker** installed.
 
 ### 1. Clone the repository
-\`\`\`bash
+
+```bash
 git clone https://github.com/votre-nom/ikochess.git
 cd ikochess
-\`\`\`
+```
 
 ### 2. Configure Environment Variables
-Create a \`.env\` file in the root and \`server/\` directories:
-\`\`\`env
+
+Create a `.env` file in the root and `server/` directories:
+
+```env
 # Supabase Configuration
 VITE_SUPABASE_URL=your_supabase_url
 VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
@@ -65,14 +68,16 @@ SUPABASE_SERVICE_KEY=your_supabase_service_key
 # Ports
 PORT=3000
 VITE_SERVER_URL=http://localhost:3000
-\`\`\`
+```
 
 ### 3. Build and Run via Docker
+
 The easiest way to boot both the compiled client and the backend server:
-\`\`\`bash
+
+```bash
 docker compose up --build -d
-\`\`\`
-*(The application will be exposed on \`http://localhost:3000\`)*
+```
+*(The application will be exposed on `http://localhost:3000`)*
 
 ---
 
