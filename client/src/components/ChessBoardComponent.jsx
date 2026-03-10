@@ -24,7 +24,7 @@ export const ChessBoardComponent = ({
         animationDuration={200}
         customDarkSquareStyle={{ backgroundColor: '#2b5278' }} // Telegram Blue Theme (Dark)
         customLightSquareStyle={{ backgroundColor: '#6490b1' }} // Telegram Blue Theme (Light)
-        isDraggablePiece={({ piece, sourceSquare }) => isDraggablePiece(piece)}
+        isDraggablePiece={isDraggablePiece}
         autoPromoteToQueen={/* Feature needed auto promote to queen */ true}
       />
     </div>

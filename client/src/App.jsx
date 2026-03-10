@@ -40,6 +40,8 @@ function App() {
   // Timers
   const [timers, setTimers] = useState({ white: 300000, black: 300000 });
   const [moveHistory, setMoveHistory] = useState([]);
+  const [selectedSquare, setSelectedSquare] = useState(null);
+  const [legalMoves, setLegalMoves] = useState([]);
   
   // UI States
   const [gameOverData, setGameOverData] = useState(null);
@@ -196,6 +198,8 @@ function App() {
       g.load(data.fen);
       setGame(g);
       setMoveHistory(prev => [...prev, data]);
+      setSelectedSquare(null);
+      setLegalMoves([]);
       
       setStatus(prevStatus => {
         if (prevStatus === 'finished') return 'finished';
@@ -261,9 +265,10 @@ function App() {
       const move = gameCopy.move(moveObj);
       
       if (move === null) return false;
-      
       setGame(gameCopy);
       setStatus('opponent-turn');
+      setSelectedSquare(null);
+      setLegalMoves([]);
       socket.emit('make-move', { gameId, move: move.san });
       return true;
     } catch (e) {
@@ -281,6 +286,61 @@ function App() {
     socket.emit('player-ready', { gameId });
     if (myColor) setPlayersReady(prev => ({ ...prev, [myColor]: true }));
   };
+
+  // ── Tap-to-Move ──
+  const onSquareClick = useCallback((square) => {
+    if (status !== 'your-turn' || isSpectator || !isGameFullyReady) return;
+
+    const piece = game.get(square);
+
+    if (selectedSquare) {
+      if (legalMoves.some(m => m.to === square)) {
+        const isPromotion = piece === null &&
+          game.get(selectedSquare)?.type === 'p' &&
+          ((myColor === 'white' && square[1] === '8') || (myColor === 'black' && square[1] === '1'));
+
+        const move = { from: selectedSquare, to: square, promotion: isPromotion ? 'q' : undefined };
+        const newGame = new Chess(game.fen());
+        const result = newGame.move(move);
+
+        if (result) {
+          setGame(newGame);
+          setSelectedSquare(null);
+          setLegalMoves([]);
+          setStatus('opponent-turn');
+          socket.emit('make-move', { gameId, move: result.san });
+        }
+        return;
+      }
+
+      if (square === selectedSquare) {
+        setSelectedSquare(null);
+        setLegalMoves([]);
+        return;
+      }
+    }
+
+    if (piece && piece.color === (myColor === 'white' ? 'w' : 'b')) {
+      setSelectedSquare(square);
+      const moves = game.moves({ square, verbose: true });
+      setLegalMoves(moves);
+    } else {
+      setSelectedSquare(null);
+      setLegalMoves([]);
+    }
+  }, [game, gameId, status, myColor, selectedSquare, legalMoves, isSpectator, isGameFullyReady]);
+
+  // Custom square styles for tap-to-move
+  const customSquareStyles = {};
+  if (selectedSquare) {
+    customSquareStyles[selectedSquare] = { backgroundColor: 'rgba(255, 255, 0, 0.4)' };
+    legalMoves.forEach(move => {
+      const targetPiece = game.get(move.to);
+      customSquareStyles[move.to] = targetPiece
+        ? { background: 'radial-gradient(circle, rgba(239,68,68,0.5) 85%, transparent 85%)', borderRadius: '50%' }
+        : { background: 'radial-gradient(circle, rgba(0,0,0,0.25) 25%, transparent 25%)', borderRadius: '50%' };
+    });
+  }
 
   const getOpponentColor = () => myColor === 'white' ? 'black' : 'white';
 
@@ -335,6 +395,8 @@ function App() {
           fen={game.fen()}
           boardOrientation={myColor || 'white'}
           onPieceDrop={onPieceDrop}
+          onSquareClick={onSquareClick}
+          customSquareStyles={customSquareStyles}
           isDraggablePiece={({ piece }) => {
             if (!piece) return false;
             if (isSpectator) return false;
