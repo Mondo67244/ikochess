@@ -49,7 +49,7 @@ export const startTimer = (gameId, games, io) => {
     gd.timers[activeColor] = Math.max(0, gd.timers[activeColor] - elapsed)
 
     // Emit timer update to players + spectators
-    io.to(gameId).emit('timer-update', {
+    io.to(gameId).emit('timer_sync', {
       white: gd.timers.white,
       black: gd.timers.black
     })
