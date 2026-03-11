@@ -167,6 +167,124 @@ export const getLeaderboard = async (limit = 20) => {
   }
 }
 
+// ── Themes ──
+export const getThemes = async (telegramId) => {
+  try {
+    const { data: allThemes } = await supabase
+      .from('themes')
+      .select('*')
+      .order('sort_order', { ascending: true })
+
+    const { data: unlocked } = await supabase
+      .from('player_themes')
+      .select('theme_id')
+      .eq('player_id', telegramId)
+
+    const { data: player } = await supabase
+      .from('players')
+      .select('active_theme')
+      .eq('telegram_id', telegramId)
+      .single()
+
+    const unlockedSet = new Set((unlocked || []).map(u => u.theme_id))
+
+    return (allThemes || []).map(t => ({
+      ...t,
+      unlocked: unlockedSet.has(t.id),
+      active: player?.active_theme === t.id
+    }))
+  } catch (err) {
+    console.error('Get themes error:', err)
+    return []
+  }
+}
+
+export const getPlayerActiveTheme = async (telegramId) => {
+  try {
+    const { data: player } = await supabase
+      .from('players')
+      .select('active_theme')
+      .eq('telegram_id', telegramId)
+      .single()
+
+    const themeId = player?.active_theme || 'telegram-blue'
+    const { data: theme } = await supabase
+      .from('themes')
+      .select('*')
+      .eq('id', themeId)
+      .single()
+
+    return theme || { id: 'telegram-blue', light_color: '#6490b1', dark_color: '#2b5278' }
+  } catch {
+    return { id: 'telegram-blue', light_color: '#6490b1', dark_color: '#2b5278' }
+  }
+}
+
+export const setActiveTheme = async (telegramId, themeId) => {
+  try {
+    // Check if player has unlocked this theme
+    const { data: unlock } = await supabase
+      .from('player_themes')
+      .select('theme_id')
+      .eq('player_id', telegramId)
+      .eq('theme_id', themeId)
+      .single()
+
+    if (!unlock) return { success: false, error: 'Thème non débloqué' }
+
+    await supabase
+      .from('players')
+      .update({ active_theme: themeId })
+      .eq('telegram_id', telegramId)
+
+    return { success: true }
+  } catch (err) {
+    return { success: false, error: err.message }
+  }
+}
+
+export const checkAndUnlockThemes = async (telegramId) => {
+  try {
+    const { data: player } = await supabase
+      .from('players')
+      .select('elo, games_won')
+      .eq('telegram_id', telegramId)
+      .single()
+
+    if (!player) return []
+
+    const { data: allThemes } = await supabase
+      .from('themes')
+      .select('id, unlock_condition')
+
+    const { data: alreadyUnlocked } = await supabase
+      .from('player_themes')
+      .select('theme_id')
+      .eq('player_id', telegramId)
+
+    const unlockedSet = new Set((alreadyUnlocked || []).map(u => u.theme_id))
+    const newUnlocks = []
+
+    for (const t of (allThemes || [])) {
+      if (unlockedSet.has(t.id)) continue
+      const [type, val] = (t.unlock_condition || 'free').split(':')
+      let earned = false
+      if (type === 'free') earned = true
+      else if (type === 'elo' && player.elo >= parseInt(val)) earned = true
+      else if (type === 'wins' && player.games_won >= parseInt(val)) earned = true
+
+      if (earned) {
+        await supabase.from('player_themes').insert({ player_id: telegramId, theme_id: t.id })
+        newUnlocks.push(t.id)
+      }
+    }
+    return newUnlocks
+  } catch (err) {
+    console.error('Unlock themes error:', err)
+    return []
+  }
+}
+
 export const saveGame = async (gameId, gameData, result, reason, winnerId) => {
   try {
     await supabase.from('games').insert({

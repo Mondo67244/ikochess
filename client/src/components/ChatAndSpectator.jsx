@@ -4,7 +4,8 @@ import { GameActions } from './GameActions';
 export const ChatAndSpectator = ({
   liveSpectators,
   showLeaderboard,
-  setShowLeaderboard
+  setShowLeaderboard,
+  themeButton
 }) => {
   return (
     <div className="chat-spectator-container">
@@ -13,6 +14,7 @@ export const ChatAndSpectator = ({
           ♘ Telegram Chess
         </h1>
         <div style={{display:'flex', gap:'10px', alignItems:'center'}}>
+          {themeButton}
           {liveSpectators > 0 && (
             <div className="live-spectators" title="Spectateurs en direct">
               👁 {liveSpectators}

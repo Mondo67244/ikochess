@@ -10,6 +10,7 @@ import { ChessBoardComponent } from './components/ChessBoardComponent';
 import { ChatAndSpectator } from './components/ChatAndSpectator';
 import { PlayerBadge } from './components/PlayerBadge';
 import { GameActions } from './components/GameActions';
+import ThemeSelector from './components/ThemeSelector';
 
 const API_URL = import.meta.env.VITE_SERVER_URL || '';
 
@@ -51,6 +52,9 @@ function App() {
   const [drawOfferFrom, setDrawOfferFrom] = useState(null);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [hasGameId, setHasGameId] = useState(false);
+  const [showThemeSelector, setShowThemeSelector] = useState(false);
+  const [boardTheme, setBoardTheme] = useState({ light_color: '#6490b1', dark_color: '#2b5278' });
+  const telegramIdRef = useRef(null);
 
   // Sync Timer Reference
   const syncTimerRef = useRef(null);
@@ -108,11 +112,19 @@ function App() {
 
     // Socket Event: Connected
     newSocket.on('connect', () => {
+      const tid = playerData ? String(playerData.id) : null;
+      telegramIdRef.current = tid;
       if (isWatchMode) {
         newSocket.emit('join-spectate', { gameId: gid });
       } else {
-        newSocket.emit('join-challenge', { gameId: gid, telegramId: playerData ? playerData.id : null });
+        newSocket.emit('join-challenge', { gameId: gid, telegramId: tid });
       }
+      // Load active theme
+      if (tid) newSocket.emit('get-active-theme', { telegramId: tid });
+    });
+
+    newSocket.on('active-theme', (theme) => {
+      if (theme) setBoardTheme(theme);
     });
     
     // For Spectator Mode Sync
@@ -459,7 +471,16 @@ function App() {
       <div className="app-container landing">
         <div className="top-bar">
           <h1 className="app-title">♟️ IkoChess</h1>
+          <button className="theme-btn" onClick={() => setShowThemeSelector(true)}>🎨</button>
         </div>
+        {showThemeSelector && (
+          <ThemeSelector
+            socket={socket}
+            telegramId={telegramIdRef.current}
+            onThemeChange={(theme) => setBoardTheme(theme)}
+            onClose={() => setShowThemeSelector(false)}
+          />
+        )}
         <div className="landing-hero">
           <div className="landing-icon">♛</div>
           <h2>Bienvenue sur IkoChess</h2>
@@ -478,7 +499,17 @@ function App() {
         liveSpectators={liveSpectators}
         showLeaderboard={showLeaderboard}
         setShowLeaderboard={setShowLeaderboard}
+        themeButton={<button className="theme-btn" onClick={() => setShowThemeSelector(true)}>🎨</button>}
       />
+
+      {showThemeSelector && (
+        <ThemeSelector
+          socket={socket}
+          telegramId={telegramIdRef.current}
+          onThemeChange={(theme) => setBoardTheme(theme)}
+          onClose={() => setShowThemeSelector(false)}
+        />
+      )}
 
       {/* Opponent badge - above the board */}
       <PlayerBadge 
@@ -511,6 +542,8 @@ function App() {
           }}
           onPromotionPieceSelect={onPromotionPieceSelect}
           onPromotionCheck={onPromotionCheck}
+          customLightSquareStyle={{ backgroundColor: boardTheme.light_color }}
+          customDarkSquareStyle={{ backgroundColor: boardTheme.dark_color }}
         />
         
         {status === 'connecting' && <div className="status-text">Connexion au serveur...</div>}

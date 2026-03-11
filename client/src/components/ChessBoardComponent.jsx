@@ -11,7 +11,9 @@ export const ChessBoardComponent = ({
   customSquareStyles,
   isDraggablePiece,
   onPromotionPieceSelect,
-  onPromotionCheck
+  onPromotionCheck,
+  customLightSquareStyle,
+  customDarkSquareStyle
 }) => {
   return (
     <div className="board-container">
@@ -24,8 +26,8 @@ export const ChessBoardComponent = ({
         boardOrientation={boardOrientation}
         customSquareStyles={customSquareStyles}
         animationDuration={200}
-        customDarkSquareStyle={{ backgroundColor: '#2b5278' }}
-        customLightSquareStyle={{ backgroundColor: '#6490b1' }}
+        customDarkSquareStyle={customDarkSquareStyle || { backgroundColor: '#2b5278' }}
+        customLightSquareStyle={customLightSquareStyle || { backgroundColor: '#6490b1' }}
         isDraggablePiece={isDraggablePiece}
         autoPromoteToQueen={false}
         onPromotionPieceSelect={onPromotionPieceSelect}

@@ -1,5 +1,5 @@
 import { Chess } from 'chess.js'
-import { AI_PLAYER_ID, ensurePlayer, getPlayerName, getPlayerProfile, getLeaderboard, supabase } from '../db.js'
+import { AI_PLAYER_ID, ensurePlayer, getPlayerName, getPlayerProfile, getLeaderboard, getThemes, setActiveTheme, getPlayerActiveTheme, checkAndUnlockThemes, supabase } from '../db.js'
 import { getAiMove } from '../ai.js'
 import { startTimer, handleGameOver, DEFAULT_TIME_MS, evaluateMoveQuality } from '../game/engine.js'
 
@@ -222,6 +222,33 @@ export const registerGameHandlers = (io, socket, games, players) => {
   socket.on('get-leaderboard', async ({ limit }) => {
     const leaderboard = await getLeaderboard(limit || 20)
     socket.emit('leaderboard-data', leaderboard)
+  })
+
+  // ── Themes ──
+  socket.on('get-themes', async ({ telegramId }) => {
+    const targetId = telegramId || socket.telegramId
+    if (!targetId) return
+    const themes = await getThemes(targetId)
+    socket.emit('themes-data', themes)
+  })
+
+  socket.on('set-theme', async ({ telegramId, themeId }) => {
+    const targetId = telegramId || socket.telegramId
+    if (!targetId || !themeId) return
+    const result = await setActiveTheme(targetId, themeId)
+    if (result.success) {
+      const theme = await getPlayerActiveTheme(targetId)
+      socket.emit('theme-changed', theme)
+    } else {
+      socket.emit('error', { message: result.error })
+    }
+  })
+
+  socket.on('get-active-theme', async ({ telegramId }) => {
+    const targetId = telegramId || socket.telegramId
+    if (!targetId) return
+    const theme = await getPlayerActiveTheme(targetId)
+    socket.emit('active-theme', theme)
   })
 
 }

@@ -1,4 +1,4 @@
-import { getPlayerName, getPlayerElo, updatePlayerStats, saveGame, supabase, getTitleFromElo } from '../db.js'
+import { getPlayerName, getPlayerElo, updatePlayerStats, saveGame, supabase, getTitleFromElo, checkAndUnlockThemes } from '../db.js'
 
 export const DEFAULT_TIME_MS = 15 * 60 * 1000 // 15 minutes per player
 
@@ -129,6 +129,10 @@ export const handleGameOver = async (gameId, gameData, games, io, overrideReason
   await saveGame(gameId, gameData, result, reason, winner)
 
   await supabase.from('chess_challenges').update({ status: 'finished' }).eq('game_id', gameId)
+
+  // Auto-unlock themes earned by this game
+  checkAndUnlockThemes(gameData.white).catch(() => {})
+  checkAndUnlockThemes(gameData.black).catch(() => {})
 
   io.to(gameId).emit('game-over', {
     result, reason,
