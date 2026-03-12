@@ -5,6 +5,7 @@ const require = createRequire(import.meta.url)
 const Stockfish = require('stockfish/bin/stockfish-18-asm.js')
 const { Chess } = require('chess.js')
 const STOCKFISH_BIN_DIR = path.dirname(require.resolve('stockfish/bin/stockfish-18-asm.js'))
+const NATIVE_FETCH = globalThis.fetch
 
 const resolveStockfishAsset = (file) =>
   path.join(STOCKFISH_BIN_DIR, file.replace(/^\.?\//, ''))
@@ -30,6 +31,12 @@ const getDifficultySettings = (difficulty) => {
   }
 }
 
+const restoreNativeFetch = () => {
+  if (typeof NATIVE_FETCH === 'function') {
+    globalThis.fetch = NATIVE_FETCH
+  }
+}
+
 export const getAiMove = async (game, difficulty) => {
   let engine = null
 
@@ -47,6 +54,7 @@ export const getAiMove = async (game, difficulty) => {
       try {
         engine?.terminate?.()
       } catch {}
+      restoreNativeFetch()
       resolve(value)
     }
 
@@ -54,6 +62,7 @@ export const getAiMove = async (game, difficulty) => {
 
     try {
       engine = await createEngine()
+      restoreNativeFetch()
     } catch (error) {
       console.error('Failed to initialize Stockfish engine:', error)
       finish(null)
