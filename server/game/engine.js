@@ -1,6 +1,6 @@
 import { getPlayerName, getPlayerElo, updatePlayerStats, saveGame, supabase, getTitleFromElo, checkAndUnlockThemes } from '../db.js'
-
-export const DEFAULT_TIME_MS = 15 * 60 * 1000 // 15 minutes per player
+import { persistActiveGame } from '../activeGames.js'
+import { CACHE_CLEANUP_DELAY_MS, DEFAULT_TIME_MS } from '../chessConfig.js'
 
 export const calculateEloChange = (playerElo, opponentElo, result) => {
   const K = 32
@@ -53,6 +53,9 @@ export const startTimer = (gameId, games, io) => {
       white: gd.timers.white,
       black: gd.timers.black
     })
+    persistActiveGame(gameId, gd).catch((err) => {
+      console.error('Active game timer persist error:', err.message)
+    })
 
     // Check timeout
     if (gd.timers[activeColor] <= 0) {
@@ -99,6 +102,13 @@ export const handleGameOver = async (gameId, gameData, games, io, overrideReason
     reason = 'fifty-move-rule'
   }
 
+  gameData.status = 'finished'
+  gameData.finishedAt = new Date().toISOString()
+  gameData.expiresAt = null
+  gameData.result = result
+  gameData.reason = reason
+  gameData.winnerId = winner
+
   const whiteName = await getPlayerName(gameData.white)
   const blackName = await getPlayerName(gameData.black)
 
@@ -129,6 +139,7 @@ export const handleGameOver = async (gameId, gameData, games, io, overrideReason
   await saveGame(gameId, gameData, result, reason, winner)
 
   await supabase.from('chess_challenges').update({ status: 'finished' }).eq('game_id', gameId)
+  await persistActiveGame(gameId, gameData)
 
   // Auto-unlock themes earned by this game
   checkAndUnlockThemes(gameData.white).catch(() => {})
@@ -144,5 +155,5 @@ export const handleGameOver = async (gameId, gameData, games, io, overrideReason
   })
 
   // Cleanup: remove game from memory after 60 seconds to allow late reconnects
-  setTimeout(() => games.delete(gameId), 60000)
+  setTimeout(() => games.delete(gameId), CACHE_CLEANUP_DELAY_MS)
 }

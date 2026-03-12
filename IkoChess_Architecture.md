@@ -4,6 +4,8 @@ Welcome to the architectural overview of **IkoChess**, a modern, real-time, mult
 
 This document serves to explain the evolution of the project from its initial monolithic design (V1) to its new, scalable, and decentralized architecture (V2).
 
+Important note: this document explains the broad architecture. For the current hardened Telegram/OpenClaw flow, signed links, challenge lifecycle, and usage guide, read [**NOUVEAU_SYSTEME.md**](./NOUVEAU_SYSTEME.md).
+
 ---
 
 ## 🏗️ Evolution: From Monolith (V1) to Micro-Services (V2)
@@ -45,8 +47,8 @@ We replaced the LLM-based API with **Stockfish.js** running directly on the serv
 
 One of the most unique aspects of IkoChess is its deep integration with the **OpenClaw Telegram Bot**:
 1. **Matchmaking**: Players type `/chess` in a Telegram Group to throw down a gauntlet.
-2. **Deep Linking**: The bot generates a unique `gameId` and creates a customized WebApp link containing the players' `telegramId`s.
-3. **Seamless Auth**: The web app reads the Telegram WebApp parameters natively, automatically linking their OpenClaw profiles, ELO, and usernames securely into the game session. No passwords required.
-4. **Broadcasts**: Challenge expirations, match results, and ranking updates flow back directly into the Telegram group seamlessly.
+2. **Deep Linking**: OpenClaw asks IkoChess to mint signed player and spectator URLs. Group messages keep callback buttons, while player-specific play links are sent in DM.
+3. **Seamless Auth**: The web app joins with signed `seat` and `spectate` tokens validated server-side. Sensitive actions no longer trust a client-supplied `telegramId`.
+4. **Lifecycle Ownership**: OpenClaw remains the Telegram delivery layer, while IkoChess is the authoritative service for challenge lifecycle, gameplay, timers, rankings, and spectator access.
 
 *Built with ❤️ for the Telegram gaming community.*

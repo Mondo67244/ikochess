@@ -7,6 +7,7 @@ import path from 'path'
 import { fileURLToPath } from 'url'
 
 // Import modules
+import { expireDueChallenges } from './maintenance.js'
 import { setupSockets } from './sockets.js'
 import { setupRoutes } from './routes.js'
 
@@ -25,15 +26,27 @@ app.use(cors())
 app.use(express.json())
 
 // ── Global State ──
-// Note: Kept in memory. Since we are using a single server structure, 
-// there is no need for a Redis adapter right now.
+// Note: In-memory state is now a cache over persisted active_games state.
 const games = new Map()
-const players = new Map()     // telegramId → socketId
+const players = new Map()     // telegramId → Set<socketId>
 const spectators = new Map()   // gameId → Set<socketId>
 
 // ── Setup Integrations ──
-setupSockets(io, games, players, spectators)
+setupSockets(io, games, players, spectators).catch((err) => {
+  console.error('Socket setup failed:', err)
+})
 setupRoutes(app, games, players)
+
+const runMaintenance = async () => {
+  try {
+    await expireDueChallenges(games, io)
+  } catch (err) {
+    console.error('Maintenance tick failed:', err)
+  }
+}
+
+runMaintenance()
+setInterval(runMaintenance, 60 * 1000)
 
 // ── Static files & fallback ──
 const clientDist = path.join(__dirname, '..', 'client', 'dist')

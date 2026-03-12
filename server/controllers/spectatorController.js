@@ -1,26 +1,36 @@
 import { getPlayerName } from '../db.js'
+import { ensureCachedGame } from '../runtimeState.js'
+import { verifySignedToken } from '../tokens.js'
 
 export const registerSpectatorHandlers = (io, socket, games, spectators) => {
-  socket.on('join-spectate', async ({ gameId }) => {
-    const gameData = games.get(gameId)
-    if (!gameData) {
+  socket.on('join-spectate', async ({ gameId, token }) => {
+    const watchSession = verifySignedToken(token, 'watch')
+    const resolvedGameId = watchSession?.gameId || gameId
+    if (!watchSession || !resolvedGameId || watchSession.gameId !== resolvedGameId) {
+      socket.emit('error', { message: 'Lien spectateur invalide ou expiré' })
+      return
+    }
+
+    const gameData = await ensureCachedGame(resolvedGameId, games, io)
+    if (!gameData || ['expired', 'cancelled'].includes(gameData.status)) {
       socket.emit('error', { message: 'Game not found' })
       return
     }
 
-    socket.join(gameId)
+    socket.authContext = { kind: 'watch', gameId: resolvedGameId }
+    socket.join(resolvedGameId)
 
-    if (!spectators.has(gameId)) spectators.set(gameId, new Set())
-    spectators.get(gameId).add(socket.id)
+    if (!spectators.has(resolvedGameId)) spectators.set(resolvedGameId, new Set())
+    spectators.get(resolvedGameId).add(socket.id)
     
-    const newCount = spectators.get(gameId).size
-    io.to(gameId).emit('spectator-count', { count: newCount })
+    const newCount = spectators.get(resolvedGameId).size
+    io.to(resolvedGameId).emit('spectator-count', { count: newCount })
 
     const whiteName = await getPlayerName(gameData.white)
     const blackName = await getPlayerName(gameData.black)
 
     socket.emit('spectate-started', {
-      gameId,
+      gameId: resolvedGameId,
       white: gameData.white, black: gameData.black,
       whiteName, blackName,
       fen: gameData.game.fen(),
@@ -28,7 +38,8 @@ export const registerSpectatorHandlers = (io, socket, games, spectators) => {
       aiDifficulty: gameData.aiDifficulty,
       timers: gameData.timers,
       moveHistory: gameData.moves,
-      ready: gameData.ready
+      ready: gameData.ready,
+      status: gameData.status
     })
   })
 }

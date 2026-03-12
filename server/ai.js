@@ -1,100 +1,110 @@
-import { createRequire } from 'module';
+import { createRequire } from 'module'
+import path from 'path'
 
-const require = createRequire(import.meta.url);
+const require = createRequire(import.meta.url)
+const Stockfish = require('stockfish/bin/stockfish-18-asm.js')
+const { Chess } = require('chess.js')
+const STOCKFISH_BIN_DIR = path.dirname(require.resolve('stockfish/bin/stockfish-18-asm.js'))
 
-// The stockfish npm package has no "main" field in package.json.
-// We must require the exact bin/stockfish.js file directly.
-const Stockfish = require('stockfish/bin/stockfish.js');
+const resolveStockfishAsset = (file) =>
+  path.join(STOCKFISH_BIN_DIR, file.replace(/^\.?\//, ''))
+
+const createEngine = async () =>
+  Stockfish()({
+    locateFile: resolveStockfishAsset
+  })
+
+const getDifficultySettings = (difficulty) => {
+  switch (difficulty) {
+    case 'easy':
+      return { skillLevel: 1, depth: 3 }
+    case 'medium':
+      return { skillLevel: 5, depth: 5 }
+    case 'hard':
+      return { skillLevel: 15, depth: 10 }
+    case 'master':
+    case 'grandmaster':
+      return { skillLevel: 20, depth: 15 }
+    default:
+      return { skillLevel: 5, depth: 5 }
+  }
+}
 
 export const getAiMove = async (game, difficulty) => {
-  return new Promise((resolve) => {
-    let engine;
+  let engine = null
+
+  return new Promise(async (resolve) => {
+    let finished = false
+    let timeout = null
+
+    const finish = (value) => {
+      if (finished) return
+      finished = true
+      if (timeout) clearTimeout(timeout)
+      try {
+        engine?.ccall?.('command', null, ['string'], ['quit'])
+      } catch {}
+      try {
+        engine?.terminate?.()
+      } catch {}
+      resolve(value)
+    }
+
+    const { skillLevel, depth } = getDifficultySettings(difficulty)
+
     try {
-      engine = Stockfish();
-    } catch (e) {
-      console.error("Failed to load Stockfish engine:", e);
-      return resolve(null);
+      engine = await createEngine()
+    } catch (error) {
+      console.error('Failed to initialize Stockfish engine:', error)
+      finish(null)
+      return
     }
 
-    const fen = game.fen();
+    timeout = setTimeout(() => {
+      console.error('Stockfish timed out')
+      finish(null)
+    }, 8000)
 
-    // Difficulty mapping (0-20 scale for Stockfish)
-    let skillLevel = 5;
-    let depth = 5;
-    
-    switch(difficulty) {
-      case 'easy':
-        skillLevel = 1;
-        depth = 3;
-        break;
-      case 'medium':
-        skillLevel = 5;
-        depth = 5;
-        break;
-      case 'hard':
-        skillLevel = 15;
-        depth = 10;
-        break;
-      case 'grandmaster':
-        skillLevel = 20;
-        depth = 15;
-        break;
-      default:
-        skillLevel = 5;
-        depth = 5;
-    }
-
-    const timeout = setTimeout(() => {
-      console.error("Stockfish timed out");
-      try { engine.postMessage('quit'); } catch(e) {}
-      resolve(null);
-    }, 8000);
-
-    // Handle messages from the engine
-    engine.onmessage = (msg) => {
-      if (typeof msg !== 'string') msg = msg.data;
-      if (!msg) return;
-      
-      if (msg.startsWith('bestmove')) {
-        const parts = msg.split(' ');
-        if (parts.length > 1) {
-          const bestMoveUci = parts[1];
-          
-          // Convert UCI (e2e4) to SAN (e4) for our game logic
-          try {
-            const from = bestMoveUci.substring(0, 2);
-            const to = bestMoveUci.substring(2, 4);
-            const promotion = bestMoveUci.length > 4 ? bestMoveUci[4] : undefined;
-            
-            // Use a clone to avoid race conditions on the shared game state
-            const { Chess } = require('chess.js');
-            const testGame = new Chess(game.fen());
-            const moveResult = testGame.move({ from, to, promotion });
-            if (moveResult) {
-              clearTimeout(timeout);
-              try { engine.postMessage('quit'); } catch(e) {}
-              resolve(moveResult.san);
-              return;
-            }
-          } catch(e) {
-            console.error('Failed parsing Stockfish output to SAN:', e);
-          }
-
-          clearTimeout(timeout);
-          try { engine.postMessage('quit'); } catch(e) {}
-          resolve(bestMoveUci); // fallback to UCI notation
-        } else {
-          clearTimeout(timeout);
-          try { engine.postMessage('quit'); } catch(e) {}
-          resolve(null);
-        }
+    const send = (command) => {
+      try {
+        engine.ccall('command', null, ['string'], [command])
+      } catch (error) {
+        console.error(`Stockfish command failed (${command}):`, error)
+        finish(null)
       }
-    };
+    }
 
-    // Configure engine
-    engine.postMessage('uci');
-    engine.postMessage(`setoption name Skill Level value ${skillLevel}`);
-    engine.postMessage(`position fen ${fen}`);
-    engine.postMessage(`go depth ${depth}`);
-  });
-};
+    engine.listener = (msg) => {
+      if (finished) return
+      if (typeof msg !== 'string') msg = String(msg || '')
+      if (!msg.startsWith('bestmove')) return
+
+      const parts = msg.trim().split(/\s+/)
+      const bestMoveUci = parts[1]
+      if (!bestMoveUci || bestMoveUci === '(none)') {
+        finish(null)
+        return
+      }
+
+      try {
+        const testGame = new Chess(game.fen())
+        const moveResult = testGame.move({
+          from: bestMoveUci.slice(0, 2),
+          to: bestMoveUci.slice(2, 4),
+          promotion: bestMoveUci.length > 4 ? bestMoveUci[4] : undefined
+        })
+        finish(moveResult?.san || bestMoveUci)
+      } catch (error) {
+        console.error('Failed parsing Stockfish output to SAN:', error)
+        finish(bestMoveUci)
+      }
+    }
+
+    send('uci')
+    send(`setoption name Skill Level value ${skillLevel}`)
+    send('setoption name Threads value 1')
+    send('ucinewgame')
+    send(`position fen ${game.fen()}`)
+    send(`go depth ${depth}`)
+  })
+}

@@ -54,35 +54,18 @@ function App() {
   const [hasGameId, setHasGameId] = useState(false);
   const [showThemeSelector, setShowThemeSelector] = useState(false);
   const [boardTheme, setBoardTheme] = useState({ light_color: '#6490b1', dark_color: '#2b5278' });
-  const telegramIdRef = useRef(null);
-
   // Sync Timer Reference
   const syncTimerRef = useRef(null);
 
   // Parse URL Parameters
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const gid = params.get('gameId') || params.get('game') || params.get('watch');
-    const isWatchMode = params.has('watch');
-    const playerJson = params.get('player');
-
-    let playerData = null;
-    if (typeof window !== 'undefined' && window.Telegram?.WebApp?.initDataUnsafe?.user) {
-      playerData = window.Telegram.WebApp.initDataUnsafe.user;
-    }
-
-    if (!playerData && playerJson) {
-      try {
-        const parsed = JSON.parse(decodeURIComponent(playerJson));
-        if (typeof parsed === 'object' && parsed !== null) {
-          playerData = parsed;
-        } else {
-          playerData = { id: String(parsed) };
-        }
-      } catch(e) { 
-        playerData = { id: playerJson };
-      }
-    }
+    const playGameId = params.get('gameId') || params.get('game');
+    const watchGameId = params.get('watch');
+    const gid = playGameId || watchGameId;
+    const isWatchMode = Boolean(watchGameId);
+    const seatToken = params.get('seat');
+    const spectateToken = params.get('spectate');
 
     if (!gid) {
       setHasGameId(false);
@@ -90,8 +73,23 @@ function App() {
     }
 
     setHasGameId(true);
-
     setGameId(gid);
+    if ((isWatchMode && !spectateToken) || (!isWatchMode && !seatToken)) {
+      setStatus('finished');
+      setGameOverData({
+        title: 'Lien invalide',
+        message: 'Ce lien de partie a expiré ou est incomplet.',
+        players: {
+          white: { name: 'IkoChess' },
+          black: { name: 'OpenClaw' }
+        },
+        eloChanges: {
+          white: { newElo: null, change: null },
+          black: { newElo: null, change: null }
+        }
+      });
+      return;
+    }
 
     // Init Socket
     const newSocket = io(API_URL);
@@ -112,15 +110,11 @@ function App() {
 
     // Socket Event: Connected
     newSocket.on('connect', () => {
-      const tid = playerData ? String(playerData.id) : null;
-      telegramIdRef.current = tid;
       if (isWatchMode) {
-        newSocket.emit('join-spectate', { gameId: gid });
+        newSocket.emit('join-spectate', { gameId: gid, token: spectateToken });
       } else {
-        newSocket.emit('join-challenge', { gameId: gid, telegramId: tid });
+        newSocket.emit('join-challenge', { token: seatToken });
       }
-      // Load active theme
-      if (tid) newSocket.emit('get-active-theme', { telegramId: tid });
     });
 
     newSocket.on('active-theme', (theme) => {
@@ -142,6 +136,8 @@ function App() {
       setMyColor(null);
 
       setIsAiGame(data.isAiGame);
+      setMoveHistory(data.moveHistory || []);
+      setPlayersReady(data.ready || { white: false, black: false });
       setTimers({
         white: data.timers.white,
         black: data.timers.black,
@@ -165,16 +161,9 @@ function App() {
         white: { id: data.white, name: data.whiteName }, 
         black: { id: data.black, name: data.blackName } 
       });
-      
-      let color = null;
-      if (playerData && !isWatchMode) {
-        if (String(data.white) === String(playerData.id)) color = 'white';
-        else if (String(data.black) === String(playerData.id)) color = 'black';
-        else setIsSpectator(true);
-        setMyColor(color);
-      } else {
-        setIsSpectator(true);
-      }
+      setMoveHistory(data.moveHistory || []);
+      setIsSpectator(!data.color);
+      setMyColor(data.color || null);
       
       // Look for individual readiness
       setPlayersReady(data.ready || { white: false, black: false });
@@ -191,7 +180,11 @@ function App() {
       } else if (data.status === 'finished') {
         setStatus('finished');
       } else {
-        setStatus(g.turn() === (color === 'white' ? 'w' : 'b') ? 'your-turn' : 'opponent-turn');
+        setStatus(g.turn() === (data.color === 'white' ? 'w' : 'b') ? 'your-turn' : 'opponent-turn');
+      }
+
+      if (data.authenticatedPlayerId) {
+        newSocket.emit('get-active-theme');
       }
     });
 
@@ -316,6 +309,22 @@ function App() {
     // Error logic
     newSocket.on('error', (err) => {
       alert(err.message || 'Une erreur est survenue');
+    });
+
+    newSocket.on('game-expired', (data) => {
+      setStatus('finished');
+      setGameOverData({
+        title: '⌛ Partie expirée',
+        message: data?.message || 'Cette partie a expiré.',
+        players: {
+          white: { name: 'Blancs' },
+          black: { name: 'Noirs' }
+        },
+        eloChanges: {
+          white: { newElo: null, change: null },
+          black: { newElo: null, change: null }
+        }
+      });
     });
 
     return () => {
@@ -464,6 +473,7 @@ function App() {
   const myInfo = myColor ? players[myColor] : players.white;
   const oppColor = myColor ? getOpponentColor() : 'black';
   const mySide = myColor || 'white';
+  const canManageTheme = Boolean(myColor && !isSpectator);
 
   // ─── LANDING PAGE (no game params) ───
   if (!hasGameId) {
@@ -471,16 +481,7 @@ function App() {
       <div className="app-container landing">
         <div className="top-bar">
           <h1 className="app-title">♟️ IkoChess</h1>
-          <button className="theme-btn" onClick={() => setShowThemeSelector(true)}>🎨</button>
         </div>
-        {showThemeSelector && (
-          <ThemeSelector
-            socket={socket}
-            telegramId={telegramIdRef.current}
-            onThemeChange={(theme) => setBoardTheme(theme)}
-            onClose={() => setShowThemeSelector(false)}
-          />
-        )}
         <div className="landing-hero">
           <div className="landing-icon">♛</div>
           <h2>Bienvenue sur IkoChess</h2>
@@ -499,13 +500,12 @@ function App() {
         liveSpectators={liveSpectators}
         showLeaderboard={showLeaderboard}
         setShowLeaderboard={setShowLeaderboard}
-        themeButton={<button className="theme-btn" onClick={() => setShowThemeSelector(true)}>🎨</button>}
+        themeButton={canManageTheme ? <button className="theme-btn" onClick={() => setShowThemeSelector(true)}>🎨</button> : null}
       />
 
-      {showThemeSelector && (
+      {showThemeSelector && canManageTheme && (
         <ThemeSelector
           socket={socket}
-          telegramId={telegramIdRef.current}
           onThemeChange={(theme) => setBoardTheme(theme)}
           onClose={() => setShowThemeSelector(false)}
         />

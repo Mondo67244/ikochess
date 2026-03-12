@@ -29,10 +29,11 @@ export const setupSockets = async (io, games, players, spectators) => {
 
     // ── Disconnect ──
     socket.on('disconnect', () => {
-      for (const [telegramId, socketId] of players.entries()) {
-        if (socketId === socket.id) { 
-          players.delete(telegramId)
-          break 
+      for (const [telegramId, socketIds] of players.entries()) {
+        if (socketIds?.has(socket.id)) {
+          socketIds.delete(socket.id)
+          if (socketIds.size === 0) players.delete(telegramId)
+          break
         }
       }
       for (const [gId, specSet] of spectators.entries()) {

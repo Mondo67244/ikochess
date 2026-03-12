@@ -12,14 +12,14 @@ const getUnlockLabel = (condition) => {
   return condition
 }
 
-export default function ThemeSelector({ socket, telegramId, onThemeChange, onClose }) {
+export default function ThemeSelector({ socket, onThemeChange, onClose }) {
   const [themes, setThemes] = useState([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (!socket || !telegramId) return
+    if (!socket) return
 
-    socket.emit('get-themes', { telegramId })
+    socket.emit('get-themes')
 
     const handler = (data) => {
       setThemes(data)
@@ -30,7 +30,7 @@ export default function ThemeSelector({ socket, telegramId, onThemeChange, onClo
     const changedHandler = (theme) => {
       if (onThemeChange) onThemeChange(theme)
       // Refresh the list to update active state
-      socket.emit('get-themes', { telegramId })
+      socket.emit('get-themes')
     }
     socket.on('theme-changed', changedHandler)
 
@@ -38,10 +38,10 @@ export default function ThemeSelector({ socket, telegramId, onThemeChange, onClo
       socket.off('themes-data', handler)
       socket.off('theme-changed', changedHandler)
     }
-  }, [socket, telegramId])
+  }, [socket])
 
   const selectTheme = (themeId) => {
-    socket.emit('set-theme', { telegramId, themeId })
+    socket.emit('set-theme', { themeId })
   }
 
   if (loading) return (

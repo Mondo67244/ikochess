@@ -1,6 +1,8 @@
 import { createClient } from '@supabase/supabase-js'
 import dotenv from 'dotenv'
 
+import { INITIAL_FEN } from './chessConfig.js'
+
 dotenv.config()
 
 export const supabase = createClient(
@@ -150,7 +152,12 @@ export const getPlayerProfile = async (telegramId) => {
 // ── Clans & Groups (Sprint 3) ──
 export const setPlayerClan = async (telegramId, groupId) => {
   try {
-    const { data: group } = await supabase.from('groups').select('id').eq('id', groupId).single()
+    const normalizedGroupId = String(groupId)
+    const { data: group } = await supabase
+      .from('groups')
+      .select('telegram_chat_id')
+      .eq('telegram_chat_id', Number(normalizedGroupId))
+      .single()
     if (!group) return { success: false, error: 'Groupe introuvable.' }
 
     const { data: player } = await supabase.from('players').select('clan_changed_at').eq('telegram_id', telegramId).single()
@@ -162,7 +169,7 @@ export const setPlayerClan = async (telegramId, groupId) => {
     }
 
     await supabase.from('players').update({ 
-      clan_group_id: groupId, 
+      clan_group_id: normalizedGroupId, 
       clan_changed_at: new Date().toISOString() 
     }).eq('telegram_id', telegramId)
 
@@ -177,10 +184,16 @@ export const getClanRankings = async (limit = 20) => {
   try {
     const { data } = await supabase
       .from('groups')
-      .select('id, name, group_elo, wars_won, total_wars')
+      .select('telegram_chat_id, name, title, group_elo, wars_won, total_wars')
       .order('group_elo', { ascending: false })
       .limit(limit)
-    return data || []
+    return (data || []).map((group) => ({
+      id: String(group.telegram_chat_id),
+      name: group.title || group.name || `Group ${Math.abs(group.telegram_chat_id)}`,
+      group_elo: group.group_elo || 0,
+      wars_won: group.wars_won || 0,
+      total_wars: group.total_wars || 0
+    }))
   } catch (err) {
     console.error('getClanRankings error:', err)
     return []
@@ -205,7 +218,7 @@ export const getClanMembers = async (groupId) => {
 export const createTournament = async (groupId, name, format = 'elimination', maxPlayers = 8) => {
   try {
     const { data, error } = await supabase.from('tournaments').insert({
-      group_id: groupId,
+      group_id: String(groupId),
       name,
       format,
       max_players: maxPlayers,
@@ -250,7 +263,7 @@ export const joinTournament = async (tournamentId, telegramId) => {
 export const getActiveTournaments = async (groupId) => {
   try {
     let query = supabase.from('tournaments').select('*').in('status', ['registration', 'active'])
-    if (groupId) query = query.eq('group_id', groupId)
+    if (groupId) query = query.eq('group_id', String(groupId))
     const { data } = await query
     return data || []
   } catch (err) {
@@ -302,7 +315,7 @@ export const getThemes = async (telegramId) => {
 
     return (allThemes || []).map(t => ({
       ...t,
-      unlocked: unlockedSet.has(t.id),
+      unlocked: (t.unlock_condition || 'free') === 'free' || unlockedSet.has(t.id),
       active: player?.active_theme === t.id
     }))
   } catch (err) {
@@ -334,15 +347,23 @@ export const getPlayerActiveTheme = async (telegramId) => {
 
 export const setActiveTheme = async (telegramId, themeId) => {
   try {
-    // Check if player has unlocked this theme
-    const { data: unlock } = await supabase
-      .from('player_themes')
-      .select('theme_id')
-      .eq('player_id', telegramId)
-      .eq('theme_id', themeId)
+    const { data: theme } = await supabase
+      .from('themes')
+      .select('id, unlock_condition')
+      .eq('id', themeId)
       .single()
+    if (!theme) return { success: false, error: 'Thème introuvable' }
 
-    if (!unlock) return { success: false, error: 'Thème non débloqué' }
+    if ((theme.unlock_condition || 'free') !== 'free') {
+      const { data: unlock } = await supabase
+        .from('player_themes')
+        .select('theme_id')
+        .eq('player_id', telegramId)
+        .eq('theme_id', themeId)
+        .single()
+
+      if (!unlock) return { success: false, error: 'Thème non débloqué' }
+    }
 
     await supabase
       .from('players')
@@ -405,7 +426,7 @@ export const saveGame = async (gameId, gameData, result, reason, winnerId) => {
       black_player_id: gameData.black,
       winner_id: winnerId, 
       moves: gameData.moves,
-      fen_start: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
+      fen_start: INITIAL_FEN,
       fen_end: gameData.game.fen(), 
       result, 
       reason, 

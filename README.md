@@ -90,5 +90,20 @@ Pour une plongée en profondeur dans les modèles de conception du système, lis
 
 ---
 
+## 📘 Documentation du Nouveau Systeme
+
+Une documentation francaise dediee au systeme durci est disponible ici :
+
+- [**NOUVEAU_SYSTEME.md**](./NOUVEAU_SYSTEME.md)
+
+Elle explique :
+
+- ce qui a ete modifie ;
+- comment fonctionne le nouveau flux OpenClaw x IkoChess ;
+- comment utiliser les nouveaux liens joueur et spectateur ;
+- ce qui reste a faire cote schema Supabase pour activer toute la persistance.
+
+---
+
 ## 📜 Licence
 Ce projet est sous [Licence MIT](LICENSE).
