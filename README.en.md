@@ -18,12 +18,39 @@ IkoChess allows Telegram communities to challenge each other directly in their g
 ## ✨ Features
 
 - ⚔️ **Telegram Deep Integration**: Start a game directly from any Telegram group using the `/chess` command via the OpenClaw bot. No account creation needed – your Telegram profile *is* your account.
-- ⚡ **Real-Time Multiplayer**: Instant, lag-free move synchronization powered by **Socket.io**.
+- ⚡ **Authoritative Real-Time Multiplayer**: Moves are validated server-side by `chess.js`, broadcast to the whole room through an authoritative event flow, and cleanly rolled back if rejected.
 - 🏆 **ELO Ranking System**: Gain or lose ELO points based on your match results (Win/Loss/Draw) against players globally.
 - 👀 **Live Spectator Mode**: Group members can open the same link to watch matches locally live, complete with a real-time spectator counter.
-- 🤖 **Stockfish AI**: Practice against the world's most powerful chess engine seamlessly integrated directly on the server, offering dynamic difficulties from *Easy* to *Grandmaster*.
+- 🤖 **Stockfish AI**: Practice against the server-side engine with the `easy`, `medium`, `hard`, and `master` difficulty levels.
 - 💬 **Interactive Socials**: Throw emojis (😤, 🔥, 💀) across the board to distract or congratulate your opponent mid-game!
 - ⏳ **Server-Auth Timers**: Highly accurate countdown timers synchronized and validated purely on the backend to prevent client-side manipulation.
+- 🎯 **Board Readability Improvements**: Persistent last-move highlight, king-in-check highlight, richer status bar, and a compact mobile-first move history sheet.
+- ♟️ **Full Mobile Promotion Flow**: Tap-to-move now opens a proper promotion picker instead of auto-queening.
+- 📱 **Telegram Mobile-First UI**: Telegram-inspired palette, coherent modals, scrollable sheets, and tighter mobile layouts for headers and player badges.
+
+---
+
+## 🧭 Current Runtime State
+
+The Telegram UX is intentionally preserved:
+
+- challenges are still started in groups through `/chess`;
+- group buttons remain callback buttons;
+- play links are still delivered in DM;
+- the spectator link is still published back into the group.
+
+The game runtime itself is now hardened:
+
+- signed player and spectator links;
+- server-authoritative identity and move validation;
+- unified live sync through `move-applied`;
+- proper client rollback through `move-rejected`;
+- anti-double-scheduling guard for AI turns.
+
+Important remaining deployment note:
+
+- `active_games` persistence is implemented in code and schema, but it is still inactive until the table is applied in Supabase.
+- a standalone SQL helper is also available at [`sql/active_games.sql`](./sql/active_games.sql) if you only want to create this table first.
 
 ---
 
@@ -87,6 +114,8 @@ docker compose up --build -d
 IkoChess recently underwent a major architectural refactor to migrate from a monolithic structure to a highly modular, decoupled service design featuring React components, specialized Socket controllers, and Redis pub/sub integration.
 
 For a deep dive into the system's design patterns, read the [**Architecture Documentation**](./IkoChess_Architecture.md).
+
+For the hardened Telegram/OpenClaw flow, the current gameplay/runtime guarantees, and the `active_games` rollout notes, also read [**NOUVEAU_SYSTEME.md**](./NOUVEAU_SYSTEME.md).
 
 ---
 

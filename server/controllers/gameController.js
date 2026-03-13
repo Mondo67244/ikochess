@@ -1,5 +1,3 @@
-import { Chess } from 'chess.js'
-
 import {
   AI_PLAYER_ID,
   ensurePlayer,
@@ -11,7 +9,7 @@ import {
   setActiveTheme,
   supabase
 } from '../db.js'
-import { ensureActiveGameFromChallenge, persistActiveGame } from '../activeGames.js'
+import { ensureActiveGameFromChallenge, persistActiveGame, updateActiveGameByGameId } from '../activeGames.js'
 import {
   ACTIVE_GAME_PLAYABLE_STATUSES,
   CHALLENGE_OPEN_STATUSES,
@@ -20,7 +18,8 @@ import {
   toFutureIso
 } from '../chessConfig.js'
 import { getAiMove } from '../ai.js'
-import { handleGameOver, startTimer, evaluateMoveQuality } from '../game/engine.js'
+import { handleGameOver, startTimer } from '../game/engine.js'
+import { buildRealtimeGameState, createMoveEntry } from '../game/statePayload.js'
 import { ensureCachedGame } from '../runtimeState.js'
 import { verifySignedToken } from '../tokens.js'
 
@@ -41,39 +40,58 @@ const expireChallenge = async (gameId) => {
   const nowIso = new Date().toISOString()
   await Promise.all([
     supabase.from('chess_challenges').update({ status: 'expired', expires_at: nowIso }).eq('game_id', gameId).in('status', CHALLENGE_OPEN_STATUSES),
-    supabase
-      .from('active_games')
-      .update({ status: 'expired', reason: 'expired', finished_at: nowIso, last_activity_at: nowIso })
-      .eq('game_id', gameId)
+    updateActiveGameByGameId(gameId, { status: 'expired', reason: 'expired', finished_at: nowIso, last_activity_at: nowIso })
   ])
 }
 
+const emitMoveRejected = (socket, gameId, gameData, reason) => {
+  socket.emit('move-rejected', {
+    reason,
+    ...(gameData ? buildRealtimeGameState(gameId, gameData) : {})
+  })
+}
+
+const emitMoveApplied = (io, gameId, gameData, moveEntry) => {
+  const payload = {
+    ...buildRealtimeGameState(gameId, gameData),
+    move: moveEntry
+  }
+
+  io.to(gameId).emit('move-applied', payload)
+  return payload
+}
+
 const scheduleAiMove = (gameId, gameData, games, io) => {
-  if (!gameData.ready.white || !gameData.ready.black) return
+  if (!gameData.ready.white || !gameData.ready.black || gameData.finished) return
+  if (!gameData.isAiGame || gameData.black !== AI_PLAYER_ID || gameData.game.turn() !== 'b') return
+
+  if (gameData.aiMoveTimeout) {
+    clearTimeout(gameData.aiMoveTimeout)
+    gameData.aiMoveTimeout = null
+  }
 
   const delay = 1000 + Math.random() * 2000
-  setTimeout(async () => {
-    if (!games.has(gameId) || gameData.finished) return
+  gameData.aiMoveTimeout = setTimeout(async () => {
+    gameData.aiMoveTimeout = null
+    if (!games.has(gameId) || gameData.finished || gameData.game.turn() !== 'b') return
 
     const difficulty = gameData.aiDifficulty || 'medium'
     const aiMoveSan = await getAiMove(gameData.game, difficulty)
     if (!aiMoveSan) return
 
     try {
-      const fenBefore = gameData.game.fen()
       const moveResult = gameData.game.move(aiMoveSan)
       if (!moveResult) return
 
-      gameData.moves.push(moveResult)
+      const moveEntry = createMoveEntry(moveResult, gameData.moves.length + 1, gameData.game.fen())
+      if (!moveEntry) return
+
+      gameData.moves.push(moveEntry)
       gameData.lastTickTime = Date.now()
       await persistActiveGame(gameId, gameData)
 
-      const moveQuality = evaluateMoveQuality(fenBefore, gameData.game.fen(), moveResult.san)
-      io.to(gameId).emit('opponent-move', {
-        move: moveResult,
-        fen: gameData.game.fen(),
-        quality: moveQuality
-      })
+      const payload = emitMoveApplied(io, gameId, gameData, moveEntry)
+      io.to(gameId).emit('opponent-move', payload)
 
       if (gameData.game.isGameOver()) {
         await handleGameOver(gameId, gameData, games, io)
@@ -98,6 +116,7 @@ const emitGameStarted = async (socket, gameId, gameData, telegramId) => {
   const color = getPlayerColor(gameData, telegramId)
 
   socket.emit('game-started', {
+    ...buildRealtimeGameState(gameId, gameData),
     gameId,
     color,
     authenticatedPlayerId: telegramId,
@@ -105,12 +124,9 @@ const emitGameStarted = async (socket, gameId, gameData, telegramId) => {
     black: gameData.black,
     whiteName,
     blackName,
-    fen: gameData.game.fen(),
     isAiGame: gameData.isAiGame,
     aiDifficulty: gameData.aiDifficulty,
-    timers: gameData.timers,
     ready: gameData.ready,
-    moveHistory: gameData.moves,
     status: gameData.status
   })
 }
@@ -241,42 +257,47 @@ export const registerGameHandlers = (io, socket, games, players) => {
 
   socket.on('make-move', async ({ gameId, move }) => {
     if (socket.authContext?.kind !== 'seat' || socket.authContext.gameId !== gameId) {
-      socket.emit('error', { message: 'Session joueur invalide' })
+      emitMoveRejected(socket, gameId, null, 'Session joueur invalide')
       return
     }
 
     const gameData = games.get(gameId) || await ensureCachedGame(gameId, games, io)
     if (!gameData || gameData.finished) {
-      socket.emit('error', { message: 'Partie introuvable' })
+      emitMoveRejected(socket, gameId, gameData, 'Partie introuvable')
       return
     }
 
     if (!gameData.ready.white || !gameData.ready.black) {
-      socket.emit('error', { message: 'Les deux joueurs doivent être prêts !' })
+      emitMoveRejected(socket, gameId, gameData, 'Les deux joueurs doivent être prêts !')
       return
     }
 
     const currentTurn = gameData.game.turn() === 'w' ? 'white' : 'black'
     const playerColor = getPlayerColor(gameData, socket.authContext.telegramId)
     if (!playerColor) {
-      socket.emit('error', { message: 'Place joueur invalide' })
+      emitMoveRejected(socket, gameId, gameData, 'Place joueur invalide')
       return
     }
 
     if (currentTurn !== playerColor) {
-      socket.emit('error', { message: "Ce n'est pas votre tour !" })
+      emitMoveRejected(socket, gameId, gameData, "Ce n'est pas votre tour !")
       return
     }
 
     try {
-      const fenBefore = gameData.game.fen()
       const moveResult = gameData.game.move(move)
       if (!moveResult) {
-        socket.emit('error', { message: 'Coup invalide' })
+        emitMoveRejected(socket, gameId, gameData, 'Coup invalide')
         return
       }
 
-      gameData.moves.push(moveResult)
+      const moveEntry = createMoveEntry(moveResult, gameData.moves.length + 1, gameData.game.fen())
+      if (!moveEntry) {
+        emitMoveRejected(socket, gameId, gameData, 'Coup invalide')
+        return
+      }
+
+      gameData.moves.push(moveEntry)
       gameData.lastTickTime = Date.now()
       gameData.expiresAt = null
 
@@ -287,12 +308,8 @@ export const registerGameHandlers = (io, socket, games, players) => {
 
       await persistActiveGame(gameId, gameData)
 
-      const moveQuality = evaluateMoveQuality(fenBefore, gameData.game.fen(), moveResult.san)
-      socket.to(gameId).emit('opponent-move', {
-        move: moveResult,
-        fen: gameData.game.fen(),
-        quality: moveQuality
-      })
+      const payload = emitMoveApplied(io, gameId, gameData, moveEntry)
+      socket.to(gameId).emit('opponent-move', payload)
 
       if (gameData.game.isGameOver()) {
         await handleGameOver(gameId, gameData, games, io)
@@ -301,7 +318,7 @@ export const registerGameHandlers = (io, socket, games, players) => {
       }
     } catch (error) {
       console.error('Invalid move error:', error)
-      socket.emit('error', { message: 'Coup non autorisé' })
+      emitMoveRejected(socket, gameId, gameData, 'Coup non autorisé')
     }
   })
 

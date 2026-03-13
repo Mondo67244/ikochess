@@ -16,18 +16,22 @@ import {
   isExpiredIso,
   toFutureIso
 } from './chessConfig.js'
+import { buildRealtimeGameState } from './game/statePayload.js'
 import { buildPlayUrl, buildWatchUrl } from './tokens.js'
-import { ensureActiveGameFromChallenge, listPublicActiveGames } from './activeGames.js'
+import {
+  buildPublicActiveGameFromRuntime,
+  ensureActiveGameFromChallenge,
+  getActiveGamesAvailability,
+  listPublicActiveGames,
+  updateActiveGameByGameId
+} from './activeGames.js'
 import { ensureCachedGame } from './runtimeState.js'
 
 const expireChallenge = async (gameId) => {
   const nowIso = new Date().toISOString()
   await Promise.all([
     supabase.from('chess_challenges').update({ status: 'expired' }).eq('game_id', gameId).in('status', CHALLENGE_OPEN_STATUSES),
-    supabase
-      .from('active_games')
-      .update({ status: 'expired', reason: 'expired', finished_at: nowIso, last_activity_at: nowIso })
-      .eq('game_id', gameId)
+    updateActiveGameByGameId(gameId, { status: 'expired', reason: 'expired', finished_at: nowIso, last_activity_at: nowIso })
   ])
 }
 
@@ -153,10 +157,7 @@ export const setupRoutes = (app, games) => {
     const nowIso = new Date().toISOString()
     await Promise.all([
       supabase.from('chess_challenges').update({ status: 'cancelled', expires_at: nowIso }).eq('game_id', gameId),
-      supabase
-        .from('active_games')
-        .update({ status: 'cancelled', reason: 'cancelled', finished_at: nowIso, last_activity_at: nowIso })
-        .eq('game_id', gameId)
+      updateActiveGameByGameId(gameId, { status: 'cancelled', reason: 'cancelled', finished_at: nowIso, last_activity_at: nowIso })
     ])
 
     if (games.has(gameId)) games.delete(gameId)
@@ -188,14 +189,11 @@ export const setupRoutes = (app, games) => {
     if (!gameData) return res.status(404).json({ error: 'Game not found' })
 
     res.json({
-      gameId: req.params.gameId,
-      fen: gameData.game.fen(),
+      ...buildRealtimeGameState(req.params.gameId, gameData),
       moves: gameData.moves,
       white: gameData.white,
       black: gameData.black,
-      turn: gameData.game.turn() === 'w' ? 'white' : 'black',
       isAiGame: gameData.isAiGame,
-      timers: gameData.timers,
       ready: gameData.ready,
       status: gameData.status
     })
@@ -203,7 +201,20 @@ export const setupRoutes = (app, games) => {
 
   app.get('/api/active-games', async (req, res) => {
     try {
+      const runtimeGames = await Promise.all(
+        Array.from(games.entries())
+          .filter(([, gameData]) => gameData && !gameData.finished && gameData.status === 'playing')
+          .map(([runtimeGameId, gameData]) => buildPublicActiveGameFromRuntime(runtimeGameId, gameData))
+      )
+
+      if (getActiveGamesAvailability() === false) {
+        return res.json(runtimeGames)
+      }
+
       const activeGames = await listPublicActiveGames()
+      if (getActiveGamesAvailability() === false) {
+        return res.json(runtimeGames)
+      }
       res.json(activeGames)
     } catch (error) {
       res.status(500).json({ error: error.message })

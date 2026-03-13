@@ -139,6 +139,94 @@ Important :
 - le schema SQL est fourni ;
 - si la table `active_games` n'existe pas encore en base, le systeme bascule en mode de compatibilite pour ne pas casser le workflow actuel.
 
+### 10. Synchronisation autoritaire des coups
+
+Le plateau n'utilise plus un melange fragile d'etats locaux et d'evenements heterogenes.
+
+Maintenant :
+
+- le serveur diffuse un evenement `move-applied` a toute la room ;
+- ce payload contient l'etat autoritaire minimum necessaire au client :
+  - `fen`
+  - `turn`
+  - `move`
+  - `moveHistory`
+  - `lastMove`
+  - `status`
+  - `timers`
+  - `checks`
+- en cas de refus d'un coup, le serveur renvoie `move-rejected` avec l'etat a restaurer.
+
+Consequence :
+
+- le joueur qui vient de jouer recoit lui aussi la confirmation serveur de son coup ;
+- l'historique des coups reste coherent entre joueur actif, adversaire et spectateur ;
+- un coup refuse peut etre annule proprement cote client.
+
+### 11. Historique des coups normalise
+
+`moveHistory` est maintenant normalise sous une forme stable :
+
+- `ply`
+- `san`
+- `from`
+- `to`
+- `color`
+- `piece`
+- `captured`
+- `promotion`
+- `flags`
+- `fenAfter`
+
+But :
+
+- afficher un historique compact fiable ;
+- surligner proprement le dernier coup ;
+- preparer d'eventuelles analyses ou replays sans dependre de payloads inconsistants.
+
+### 12. Correctifs gameplay et UX du plateau
+
+Plusieurs ameliorations ont ete ajoutees directement dans l'application web :
+
+- surbrillance persistante du dernier coup ;
+- accent plus visible quand le dernier coup vient de l'adversaire ;
+- mise en evidence du roi en echec ;
+- bandeau de statut plus clair :
+  - a vous de jouer ;
+  - tour de l'adversaire ;
+  - en attente de validation ;
+  - echec au roi ;
+  - mode spectateur ;
+- panneau compact d'historique des coups, adapte mobile ;
+- vraie selection de promotion en tap-to-move ;
+- correction du modal de fin de partie en mode spectateur.
+
+### 14. Passe visuelle Telegram et correctifs mobile
+
+L'application web a aussi recu une passe UI plus proche de Telegram :
+
+- application des couleurs Telegram Mini App quand `window.Telegram.WebApp.themeParams` est disponible ;
+- fallback sur une palette Telegram dark si l'app n'est pas ouverte dans Telegram ;
+- modales et feuilles unifiees pour :
+  - classement ;
+  - themes ;
+  - promotion ;
+  - fin de partie ;
+  - historique des coups ;
+- contenus scrollables et `safe-area` mobile ;
+- top bar et badges joueurs ajustes pour les petits ecrans ;
+- historique des coups converti en vraie modale/sheet pour eviter les chevauchements avec le plateau.
+
+### 13. Garde anti-double coup IA
+
+Le moteur IA ne doit plus programmer plusieurs coups en parallele pour la meme partie.
+
+Le serveur maintient maintenant :
+
+- un seul timer d'action IA par partie ;
+- annulation/recreation propre de cette action apres reconnexion ou reprise ;
+- prevention des doubles coups lies a plusieurs `setTimeout`.
+
 ## Comment utiliser le nouveau systeme
 
 ## 1. Partie joueur contre joueur
@@ -184,6 +272,17 @@ Ce qui change pour l'utilisateur :
 3. Le lien contient un token `seat` signe.
 4. La partie charge directement avec l'IA.
 
+## 2.b Experience de jeu sur le plateau
+
+Une fois la partie chargee :
+
+- le dernier coup reste visible sur le plateau ;
+- le roi en echec est surligne ;
+- un bandeau d'etat indique clairement la situation de la partie ;
+- le bouton `📜 Coups` ouvre l'historique compact ;
+- en cas de promotion sur mobile, un selecteur permet de choisir dame, tour, fou ou cavalier ;
+- si un coup est en attente de confirmation serveur, l'interface le signale puis se resynchronise sur la reponse autoritaire.
+
 ## 3. Regarder une partie
 
 ### Depuis Telegram
@@ -221,6 +320,8 @@ Ces points doivent rester vrais apres toute modification future :
 - ne pas supprimer l'envoi des liens de jeu en DM ;
 - ne pas supprimer le lien de watch dans le groupe ;
 - ne pas refaire confiance a `telegramId` envoye par le client ;
+- ne pas reintroduire une source de verite locale du plateau differente de l'etat serveur ;
+- ne pas faire reposer l'historique des coups sur des payloads heterogenes ;
 - ne pas reutiliser `groups.id` comme identifiant Telegram de groupe ;
 - ne pas reouvrir une partie terminee avec un ancien lien ;
 - ne pas casser les commandes existantes `/chess`, `/chess_ai`, `/chess_accept`, `/chess_decline`, `/games`, `/games_ranking`.
@@ -230,6 +331,10 @@ Ces points doivent rester vrais apres toute modification future :
 Le fichier de reference du schema est :
 
 - `supabase-schema.sql`
+
+Un script SQL autonome est aussi fourni pour le cas le plus frequent :
+
+- `sql/active_games.sql`
 
 Il contient maintenant :
 
@@ -249,13 +354,25 @@ Le code applicatif est pret, mais il y a un point important cote base :
 
 - si `active_games` n'est pas encore cree dans Supabase, la persistance complete des parties actives n'est pas encore activee ;
 - le systeme reste compatible grace au mode fallback ;
-- pour activer totalement la reprise durable et la persistence des spectateurs, il faut appliquer `supabase-schema.sql` dans Supabase.
+- pour activer totalement la reprise durable et la persistence des spectateurs, il faut appliquer `supabase-schema.sql` dans Supabase ;
+- si vous voulez juste activer `active_games` rapidement, vous pouvez d'abord executer `sql/active_games.sql`.
 
 ## Limitations temporaires tant que `active_games` n'est pas applique
 
 - reprise apres redemarrage limitee ;
 - spectateur durable apres restart non garanti ;
 - certaines protections de persistence fonctionnent en mode degrade.
+
+Les ameliorations suivantes restent actives meme sans `active_games` :
+
+- synchronisation autoritaire `move-applied` ;
+- rollback client via `move-rejected` ;
+- highlights visuels du dernier coup et de l'echec ;
+- historique compact des coups ;
+- feuille d'historique mobile corrigee ;
+- modales Telegram responsives ;
+- promotion complete en tap-to-move ;
+- garde anti-double action IA.
 
 Les protections suivantes restent actives meme sans `active_games` :
 
@@ -277,6 +394,9 @@ Les protections suivantes restent actives meme sans `active_games` :
 - `/chess_decline` annule le defi via l'API ;
 - `/games` liste les parties actives ;
 - `/games_ranking` affiche le classement ELO.
+- le plateau affiche le dernier coup et l'etat d'echec ;
+- le panneau `📜 Coups` affiche un historique coherent ;
+- la promotion mobile permet de choisir une piece.
 
 ### Cote securite
 
@@ -284,6 +404,7 @@ Les protections suivantes restent actives meme sans `active_games` :
 - reutiliser un lien termine doit echouer ;
 - un spectateur ne doit pas pouvoir jouer ;
 - un joueur ne doit pas pouvoir changer de place.
+- un coup invalide doit etre refuse puis rollbacke cote client.
 
 ### Cote exploitation
 
@@ -297,7 +418,10 @@ Le nouveau systeme garde le meme usage Telegram, mais renforce fortement la secu
 
 - liens joueurs/spectateurs signes ;
 - serveur autoritaire sur l'identite ;
+- serveur autoritaire sur le plateau et l'historique ;
 - cycle de vie des defis explicite ;
 - acceptation concurrente securisee ;
+- synchronisation temps reel plus fiable ;
+- UX du plateau plus lisible ;
 - classement principal en ELO ;
 - base preparee pour la persistence des parties actives.

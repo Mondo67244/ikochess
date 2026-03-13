@@ -22,10 +22,12 @@ The refactored **IkoChess** introduces separation of concerns, higher reliabilit
 
 #### 1. Frontend: Component-Driven Design
 The frontend has been broken down into isolated, reusable React components:
-- **`ChessBoardArea.jsx`**: Purely handles the `react-chessboard` and the `make-move` logic.
-- **`ChessHUD.jsx`**: Handles the player plaques, ELO display, and the synchronized countdown timers.
+- **`ChessBoardComponent.jsx`**: Handles the `react-chessboard` integration and move interactions.
+- **`PlayerBadge.jsx`**: Handles player plaques, captured material summary, emojis, and clocks.
 - **`ChatAndSpectator.jsx`**: Isolates the social features—emoji throwing, draw/resign actions, and the live spectator count.
-- **`App.jsx`**: Now acts solely as the **Container/Controller**, managing the global WebSocket connection and orchestrating state down to its pure child components.
+- **`App.jsx`**: Remains the main container/controller for socket orchestration, authoritative move sync, board state, and game-status UX.
+- **`GameStatusBar.jsx`** and **`MoveHistorySheet.jsx`**: Add the new gameplay readability layer (last move, check state, compact move history).
+- **Responsive Telegram UI layer**: The shell now consumes Telegram Mini App theme params, uses a Telegram-like palette by default, and standardizes popups into scrollable mobile-first modals/sheets.
 
 #### 2. Backend: Modular Service-Oriented Logic
 The server has been split into specific controllers:
@@ -33,8 +35,17 @@ The server has been split into specific controllers:
 - **`chatController.js`**: Social interactions (emojis, draw logic).
 - **`spectatorController.js`**: Observer management.
 
+The current runtime also standardizes live board sync through a single authoritative payload:
+
+- **`move-applied`**: broadcast to every participant and spectator after each validated move.
+- **`move-rejected`**: sent back to the acting player when a move must be rolled back to server state.
+- **`statePayload.js`**: normalizes move history, last move, timers, and check state for client consumption.
+- **`activeGames.js`**: owns the durable live-state bridge, `active_games` probing, and fallback behavior when the table has not been created yet.
+
 #### 3. Scaling: Redis Adapter
 By integrating the `@socket.io/redis-adapter` and connecting to a Redis instance, the real-time pub/sub features are decoupled from a single Node.js process. This allows spinning up multiple Docker containers of the backend to handle thousands of concurrent players without WebSockets dropping or missing messages.
+
+Current note: the hardening pass is already live without requiring Redis. The most immediate persistence dependency is the `active_games` table in Supabase, with SQL available in [`sql/active_games.sql`](./sql/active_games.sql) and the broader runtime schema in [`supabase-schema.sql`](./supabase-schema.sql).
 
 #### 4. The Intelligence: Stockfish Automation
 We replaced the LLM-based API with **Stockfish.js** running directly on the server.

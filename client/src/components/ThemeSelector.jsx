@@ -45,24 +45,43 @@ export default function ThemeSelector({ socket, onThemeChange, onClose }) {
   }
 
   if (loading) return (
-    <div className="theme-selector-overlay" onClick={onClose}>
-      <div className="theme-selector" onClick={e => e.stopPropagation()}>
-        <p style={{ textAlign: 'center', color: '#aaa' }}>Chargement...</p>
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-shell modal-shell--wide" onClick={e => e.stopPropagation()}>
+        <div className="theme-selector modal-panel modal-panel--wide">
+          <div className="modal-header">
+            <div className="modal-title-group">
+              <span className="modal-kicker">Themes</span>
+              <h3 className="modal-title">Personnalisation du plateau</h3>
+              <p className="modal-subtitle">Chargement des themes disponibles.</p>
+            </div>
+            <button className="modal-close-btn" onClick={onClose} aria-label="Fermer">✕</button>
+          </div>
+          <div className="modal-body modal-scroll">
+            <p className="theme-loading">Chargement...</p>
+          </div>
+        </div>
       </div>
     </div>
   )
 
   return (
-    <div className="theme-selector-overlay" onClick={onClose}>
-      <div className="theme-selector" onClick={e => e.stopPropagation()}>
-        <div className="theme-header">
-          <h3>🎨 Thèmes</h3>
-          <button className="theme-close-btn" onClick={onClose}>✕</button>
-        </div>
-        <div className="theme-grid">
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-shell modal-shell--wide" onClick={e => e.stopPropagation()}>
+        <div className="theme-selector modal-panel modal-panel--wide">
+          <div className="modal-header">
+            <div className="modal-title-group">
+              <span className="modal-kicker">Themes</span>
+              <h3 className="modal-title">Plateaux Telegram</h3>
+              <p className="modal-subtitle">Une presentation plus nette, plus coherente et scrollable sur mobile.</p>
+            </div>
+            <button className="modal-close-btn" onClick={onClose} aria-label="Fermer">✕</button>
+          </div>
+          <div className="modal-body modal-scroll">
+            <div className="theme-grid">
           {themes.map(t => (
-            <div
+            <button
               key={t.id}
+              type="button"
               className={`theme-card ${t.active ? 'active' : ''} ${!t.unlocked ? 'locked' : ''}`}
               onClick={() => t.unlocked && selectTheme(t.id)}
             >
@@ -79,8 +98,10 @@ export default function ThemeSelector({ socket, onThemeChange, onClose }) {
                 )}
                 {t.active && <span className="theme-active-badge">✓ Actif</span>}
               </div>
-            </div>
+            </button>
           ))}
+            </div>
+          </div>
         </div>
       </div>
     </div>

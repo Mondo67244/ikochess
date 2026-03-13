@@ -96,6 +96,7 @@ ALTER TABLE chess_challenges ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAU
 ALTER TABLE chess_challenges ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
 
 -- Durable live game state used for resume/watch/recovery
+-- Standalone SQL version is also available in sql/active_games.sql.
 CREATE TABLE IF NOT EXISTS active_games (
   game_id TEXT PRIMARY KEY,
   challenge_id BIGINT,
@@ -117,7 +118,17 @@ CREATE TABLE IF NOT EXISTS active_games (
   last_activity_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   expires_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  finished_at TIMESTAMPTZ
+  finished_at TIMESTAMPTZ,
+  CONSTRAINT active_games_status_check
+    CHECK (status IN ('accepted', 'playing', 'finished', 'cancelled', 'expired')),
+  CONSTRAINT active_games_ai_difficulty_check
+    CHECK (ai_difficulty IN ('easy', 'medium', 'hard', 'master')),
+  CONSTRAINT active_games_moves_is_array
+    CHECK (jsonb_typeof(moves) = 'array'),
+  CONSTRAINT active_games_timers_is_object
+    CHECK (jsonb_typeof(timers) = 'object'),
+  CONSTRAINT active_games_ready_is_object
+    CHECK (jsonb_typeof(ready) = 'object')
 );
 
 ALTER TABLE active_games ADD COLUMN IF NOT EXISTS challenge_id BIGINT;
@@ -236,5 +247,8 @@ CREATE INDEX IF NOT EXISTS idx_challenges_group_chat ON chess_challenges(group_c
 CREATE INDEX IF NOT EXISTS idx_active_games_status ON active_games(status);
 CREATE INDEX IF NOT EXISTS idx_active_games_last_activity ON active_games(last_activity_at DESC);
 CREATE INDEX IF NOT EXISTS idx_active_games_expires_at ON active_games(expires_at);
+CREATE INDEX IF NOT EXISTS idx_active_games_white_player ON active_games(white_player_id);
+CREATE INDEX IF NOT EXISTS idx_active_games_black_player ON active_games(black_player_id);
+CREATE INDEX IF NOT EXISTS idx_active_games_group_chat ON active_games(group_chat_id);
 CREATE INDEX IF NOT EXISTS idx_tournaments_group_status ON tournaments(group_id, status);
 CREATE INDEX IF NOT EXISTS idx_season_history_player ON season_history(player_id, season DESC);

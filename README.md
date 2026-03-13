@@ -18,12 +18,39 @@ IkoChess permet aux communautés Telegram de se défier directement dans leurs d
 ## ✨ Fonctionnalités
 
 - ⚔️ **Intégration Telegram Profonde** : Lancez une partie directement depuis n'importe quel groupe Telegram en utilisant la commande `/chess` via le bot OpenClaw. Pas besoin de créer un compte – votre profil Telegram *est* votre compte.
-- ⚡ **Multijoueur en Temps Réel** : Synchronisation instantanée et sans décalage des mouvements, propulsée par **Socket.io**.
+- ⚡ **Multijoueur en Temps Réel Autoritaire** : Les coups sont validés côté serveur par `chess.js`, diffusés à toute la room via un flux autoritaire, et rollbackés proprement en cas de rejet.
 - 🏆 **Système de Classement ELO** : Gagnez ou perdez des points ELO en fonction des résultats de vos matchs (Victoire/Défaite/Nul) contre des joueurs du monde entier.
 - 👀 **Mode Spectateur en Direct** : Les membres du groupe peuvent ouvrir le même lien pour regarder les matchs en cours, avec un compteur de spectateurs en temps réel.
-- 🤖 **IA Stockfish** : Entraînez-vous contre le moteur d'échecs le plus puissant au monde, intégré de manière transparente directement sur le serveur, offrant des niveaux de difficulté dynamiques allant de *Facile* à *Grand Maître*.
+- 🤖 **IA Stockfish** : Entraînez-vous contre le moteur d'échecs directement sur le serveur, avec les niveaux `easy`, `medium`, `hard` et `master`.
 - 💬 **Interactions Sociales** : Lancez des emojis (😤, 🔥, 💀) à travers le plateau pour distraire ou féliciter votre adversaire en pleine partie !
 - ⏳ **Minuteurs Validés par le Serveur** : Des comptes à rebours très précis, synchronisés et validés purement côté serveur pour empêcher toute manipulation côté client.
+- 🎯 **Lisibilité du Plateau** : Dernier coup mis en évidence, roi en échec highlighté, bandeau de statut enrichi, et historique compact des coups côté mobile.
+- ♟️ **Promotion Complète sur Mobile** : Le tap-to-move ouvre désormais un vrai sélecteur de promotion, comme le drag-and-drop.
+- 📱 **Interface Telegram Mobile-First** : Palette Telegram, modales cohérentes, feuilles scrollables, header et badges resserrés pour les petits écrans.
+
+---
+
+## 🧭 État Actuel du Jeu
+
+Le flux Telegram reste volontairement inchangé :
+
+- le défi est lancé dans le groupe via `/chess` ;
+- les boutons du groupe restent des boutons callback ;
+- les liens de jeu sont toujours envoyés en DM ;
+- le lien spectateur continue d’être publié dans le groupe.
+
+Le moteur de partie a en revanche été durci :
+
+- liens joueur et spectateur signés ;
+- serveur autoritaire sur l’identité et les coups ;
+- synchronisation de partie unifiée via `move-applied` ;
+- rejet propre des coups via `move-rejected` ;
+- garde anti-double coup côté IA.
+
+Point encore important :
+
+- la persistance `active_games` est prête dans le code et le schéma, mais reste inactive tant que la table n’est pas appliquée dans Supabase.
+- un script SQL autonome est aussi fourni dans [`sql/active_games.sql`](./sql/active_games.sql) pour créer uniquement cette table.
 
 ---
 
@@ -101,7 +128,10 @@ Elle explique :
 - ce qui a ete modifie ;
 - comment fonctionne le nouveau flux OpenClaw x IkoChess ;
 - comment utiliser les nouveaux liens joueur et spectateur ;
-- ce qui reste a faire cote schema Supabase pour activer toute la persistance.
+- comment fonctionne le nouveau flux temps reel du plateau ;
+- quelles ameliorations visuelles ont ete ajoutees dans le jeu ;
+- ce qui reste a faire cote schema Supabase pour activer toute la persistance ;
+- ou trouver le SQL autonome de `active_games`.
 
 ---
 

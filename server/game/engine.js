@@ -79,6 +79,10 @@ export const handleGameOver = async (gameId, gameData, games, io, overrideReason
   gameData.finished = true
 
   stopTimer(gameId, games)
+  if (gameData.aiMoveTimeout) {
+    clearTimeout(gameData.aiMoveTimeout)
+    gameData.aiMoveTimeout = null
+  }
 
   let result = 'draw'
   let reason = overrideReason || 'draw'

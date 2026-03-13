@@ -1,4 +1,5 @@
 import { getPlayerName } from '../db.js'
+import { buildRealtimeGameState } from '../game/statePayload.js'
 import { ensureCachedGame } from '../runtimeState.js'
 import { verifySignedToken } from '../tokens.js'
 
@@ -30,14 +31,12 @@ export const registerSpectatorHandlers = (io, socket, games, spectators) => {
     const blackName = await getPlayerName(gameData.black)
 
     socket.emit('spectate-started', {
+      ...buildRealtimeGameState(resolvedGameId, gameData),
       gameId: resolvedGameId,
       white: gameData.white, black: gameData.black,
       whiteName, blackName,
-      fen: gameData.game.fen(),
       isAiGame: gameData.isAiGame,
       aiDifficulty: gameData.aiDifficulty,
-      timers: gameData.timers,
-      moveHistory: gameData.moves,
       ready: gameData.ready,
       status: gameData.status
     })

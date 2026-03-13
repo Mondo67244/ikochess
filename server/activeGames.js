@@ -6,9 +6,15 @@ import {
   INITIAL_FEN,
   PUBLIC_ACTIVE_GAME_LIMIT
 } from './chessConfig.js'
+import { normalizeMoveHistory } from './game/statePayload.js'
 import { buildWatchUrl } from './tokens.js'
 
 let activeGamesAvailable = null
+let nextActiveGamesProbeAt = 0
+
+const ACTIVE_GAMES_PROBE_INTERVAL_MS = 60 * 1000
+
+export const getActiveGamesAvailability = () => activeGamesAvailable
 
 const isMissingActiveGamesError = (error) => {
   const message = error?.message || ''
@@ -16,9 +22,32 @@ const isMissingActiveGamesError = (error) => {
 }
 
 const markActiveGamesUnavailable = (error) => {
+  nextActiveGamesProbeAt = Date.now() + ACTIVE_GAMES_PROBE_INTERVAL_MS
   if (activeGamesAvailable === false) return
   activeGamesAvailable = false
   console.warn('active_games persistence disabled:', error?.message || 'table unavailable')
+}
+
+const shouldSkipActiveGames = () => (
+  activeGamesAvailable === false && Date.now() < nextActiveGamesProbeAt
+)
+
+const runActiveGamesMutation = async (operation) => {
+  if (shouldSkipActiveGames()) {
+    return { skipped: true, data: null }
+  }
+
+  const { data, error } = await operation(supabase.from('active_games'))
+  if (error) {
+    if (isMissingActiveGamesError(error)) {
+      markActiveGamesUnavailable(error)
+      return { skipped: true, data: null }
+    }
+    throw error
+  }
+
+  activeGamesAvailable = true
+  return { skipped: false, data: data ?? null }
 }
 
 const normalizeTimers = (timers) => ({
@@ -49,6 +78,7 @@ export const buildGameDataFromChallenge = (challenge) => {
     timers: { white: DEFAULT_TIME_MS, black: DEFAULT_TIME_MS },
     lastTickTime: null,
     timerInterval: null,
+    aiMoveTimeout: null,
     drawOffer: null,
     finished: false,
     ready: normalizeReady(null, isAiGame),
@@ -71,13 +101,14 @@ export const buildGameDataFromRecord = (record) => {
     game,
     white: record.white_player_id,
     black: record.black_player_id,
-    moves: Array.isArray(record.moves) ? record.moves : [],
+    moves: normalizeMoveHistory(record.moves),
     isAiGame: Boolean(record.is_ai_game),
     aiDifficulty: record.ai_difficulty || 'medium',
     createdAt: new Date(record.created_at || Date.now()),
     timers: normalizeTimers(record.timers),
     lastTickTime: record.last_tick_time ? new Date(record.last_tick_time).getTime() : null,
     timerInterval: null,
+    aiMoveTimeout: null,
     drawOffer: record.draw_offer || null,
     finished: ['finished', 'expired', 'cancelled'].includes(record.status),
     ready: normalizeReady(record.ready, record.is_ai_game),
@@ -101,7 +132,7 @@ export const serializeGameData = (gameId, gameData) => ({
   is_ai_game: gameData.isAiGame,
   ai_difficulty: gameData.aiDifficulty || 'medium',
   fen: gameData.game?.fen() || INITIAL_FEN,
-  moves: Array.isArray(gameData.moves) ? gameData.moves : [],
+  moves: normalizeMoveHistory(gameData.moves),
   timers: normalizeTimers(gameData.timers),
   ready: normalizeReady(gameData.ready, gameData.isAiGame),
   draw_offer: gameData.drawOffer || null,
@@ -117,22 +148,13 @@ export const serializeGameData = (gameId, gameData) => ({
 })
 
 export const persistActiveGame = async (gameId, gameData) => {
-  if (activeGamesAvailable === false) return null
   const record = serializeGameData(gameId, gameData)
-  const { error } = await supabase.from('active_games').upsert(record, { onConflict: 'game_id' })
-  if (error) {
-    if (isMissingActiveGamesError(error)) {
-      markActiveGamesUnavailable(error)
-      return null
-    }
-    throw error
-  }
-  activeGamesAvailable = true
-  return record
+  const result = await runActiveGamesMutation((query) => query.upsert(record, { onConflict: 'game_id' }))
+  return result?.skipped ? null : record
 }
 
 export const loadActiveGameRecord = async (gameId) => {
-  if (activeGamesAvailable === false) return null
+  if (shouldSkipActiveGames()) return null
   const { data, error } = await supabase.from('active_games').select('*').eq('game_id', gameId).maybeSingle()
   if (error) {
     if (isMissingActiveGamesError(error)) {
@@ -177,40 +199,35 @@ export const ensureActiveGameFromChallenge = async (challenge) => {
 }
 
 export const updatePersistentGameStatus = async (gameId, status, fields = {}) => {
-  if (activeGamesAvailable === false) return
   const payload = {
     status,
     last_activity_at: new Date().toISOString(),
     ...fields
   }
-  const { error } = await supabase.from('active_games').update(payload).eq('game_id', gameId)
-  if (error) {
-    if (isMissingActiveGamesError(error)) {
-      markActiveGamesUnavailable(error)
-      return
-    }
-    throw error
+  await runActiveGamesMutation((query) => query.update(payload).eq('game_id', gameId))
+}
+
+export const updateActiveGameByGameId = async (gameId, fields = {}) => {
+  if (!gameId) return
+  const payload = {
+    last_activity_at: new Date().toISOString(),
+    ...fields
   }
-  activeGamesAvailable = true
+  await runActiveGamesMutation((query) => query.update(payload).eq('game_id', gameId))
+}
+
+export const updateActiveGamesByGameIds = async (gameIds, fields = {}) => {
+  if (!Array.isArray(gameIds) || gameIds.length === 0) return
+  const payload = {
+    last_activity_at: new Date().toISOString(),
+    ...fields
+  }
+  await runActiveGamesMutation((query) => query.update(payload).in('game_id', gameIds))
 }
 
 export const listPublicActiveGames = async () => {
-  if (activeGamesAvailable === false) {
-    const { data, error } = await supabase
-      .from('chess_challenges')
-      .select('game_id, challenger_name, opponent_name, is_ai_game, ai_difficulty')
-      .eq('status', 'playing')
-      .order('created_at', { ascending: false })
-      .limit(PUBLIC_ACTIVE_GAME_LIMIT)
-    if (error) throw error
-    return (data || []).map((row) => ({
-      gameId: row.game_id,
-      challengerName: row.challenger_name || 'Joueur',
-      opponentName: row.is_ai_game ? 'OpenClaw AI' : (row.opponent_name || 'Joueur'),
-      isAiGame: row.is_ai_game,
-      aiDifficulty: row.ai_difficulty || 'medium',
-      watchUrl: buildWatchUrl({ gameId: row.game_id })
-    }))
+  if (shouldSkipActiveGames()) {
+    return []
   }
 
   const { data, error } = await supabase
@@ -239,3 +256,12 @@ export const listPublicActiveGames = async () => {
     watchUrl: buildWatchUrl({ gameId: row.game_id })
   })))
 }
+
+export const buildPublicActiveGameFromRuntime = async (gameId, gameData) => ({
+  gameId,
+  challengerName: await getPlayerName(gameData.white),
+  opponentName: gameData.isAiGame ? 'OpenClaw AI' : await getPlayerName(gameData.black),
+  isAiGame: Boolean(gameData.isAiGame),
+  aiDifficulty: gameData.aiDifficulty || 'medium',
+  watchUrl: buildWatchUrl({ gameId })
+})

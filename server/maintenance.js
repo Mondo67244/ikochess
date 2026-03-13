@@ -1,5 +1,6 @@
 import { supabase } from './db.js'
 import { CHALLENGE_OPEN_STATUSES } from './chessConfig.js'
+import { updateActiveGamesByGameIds } from './activeGames.js'
 import { stopTimer } from './game/engine.js'
 
 export const expireDueChallenges = async (games, io) => {
@@ -21,10 +22,7 @@ export const expireDueChallenges = async (games, io) => {
 
   await Promise.all([
     supabase.from('chess_challenges').update({ status: 'expired' }).in('game_id', gameIds),
-    supabase
-      .from('active_games')
-      .update({ status: 'expired', reason: 'expired', finished_at: nowIso, last_activity_at: nowIso })
-      .in('game_id', gameIds)
+    updateActiveGamesByGameIds(gameIds, { status: 'expired', reason: 'expired', finished_at: nowIso, last_activity_at: nowIso })
   ])
 
   for (const gameId of gameIds) {

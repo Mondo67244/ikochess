@@ -88,7 +88,7 @@ export const PlayerBadge = ({
       
       <div className="player-info">
         <span className="player-name">{name || 'Joueur'}</span>
-        {capturedPieces && <span className="captured-pieces" style={{fontSize:'0.75rem', color:'#aaa', marginLeft:'8px'}}>{capturedPieces}</span>}
+        {capturedPieces && <span className="captured-pieces">{capturedPieces}</span>}
       </div>
 
       {timer != null && (
